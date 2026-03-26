@@ -191,11 +191,30 @@ document.getElementById('fileInput').onchange = (e) => {
     handleFile(e.target.files[0]);
 };
 
-document.getElementById('exportBtn').onclick = () => {
+document.getElementById('exportBtn').onclick = async () => {
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
+    document.getElementById('status').innerText = '⏳ 正在生成 PPTX，请稍候...';
 
-    finalSlides.forEach((s, idx) => {
+    // 读取图片原始宽高（解决 pptxgen contain 不可靠导致拉伸的问题）
+    const getAspect = (dataUrl) => new Promise(res => {
+        const img = new Image();
+        img.onload  = () => res(img.naturalWidth / img.naturalHeight);
+        img.onerror = () => res(1);
+        img.src = dataUrl;
+    });
+
+    // 手动等比 contain：计算出实际 w/h，居中放置，不依赖 pptxgen sizing
+    const addImg = async (slide, data, bx, by, bw, bh) => {
+        const ar = await getAspect(data);
+        let w, h;
+        if (ar >= bw / bh) { w = bw;      h = bw / ar; }
+        else               { h = bh;      w = bh * ar; }
+        slide.addImage({ data, x: bx + (bw - w) / 2, y: by + (bh - h) / 2, w, h });
+    };
+
+    for (let idx = 0; idx < finalSlides.length; idx++) {
+        const s = finalSlides[idx];
         const slide = pptx.addSlide();
         const hasImg = s.images && s.images.length > 0;
         const contentW = hasImg ? 7.8 : 12.5;
@@ -257,24 +276,22 @@ document.getElementById('exportBtn').onclick = () => {
                 x: 0.4, y: 0.80, w: 7.0, h: 6.45,
                 valign: 'top', autoFit: true, lineSpacing: LINE_SP
             });
-            // 多图网格：1图→居中，2图→竖排，3-4图→2×2
+            // 多图网格：1图→全格，2图→竖排，3-4图→2×2（全部等比，不拉伸）
             const imgs = s.images.slice(0, 4);
             const gx = 7.7, gy = 1.0, gw = 5.3, gh = 5.8;
             if (imgs.length === 1) {
-                slide.addImage({ data: imgs[0], x: gx, y: gy, w: gw, h: gh,
-                    sizing: { type: 'contain', w: gw, h: gh } });
+                await addImg(slide, imgs[0], gx, gy, gw, gh);
             } else if (imgs.length === 2) {
                 const rh = (gh - 0.15) / 2;
-                imgs.forEach((img, i) => slide.addImage({ data: img,
-                    x: gx, y: gy + i * (rh + 0.15), w: gw, h: rh,
-                    sizing: { type: 'contain', w: gw, h: rh } }));
+                for (let i = 0; i < imgs.length; i++)
+                    await addImg(slide, imgs[i], gx, gy + i * (rh + 0.15), gw, rh);
             } else {
                 const cw = (gw - 0.15) / 2, ch = (gh - 0.15) / 2;
-                imgs.forEach((img, i) => slide.addImage({ data: img,
-                    x: gx + (i % 2) * (cw + 0.15),
-                    y: gy + Math.floor(i / 2) * (ch + 0.15),
-                    w: cw, h: ch,
-                    sizing: { type: 'contain', w: cw, h: ch } }));
+                for (let i = 0; i < imgs.length; i++)
+                    await addImg(slide, imgs[i],
+                        gx + (i % 2) * (cw + 0.15),
+                        gy + Math.floor(i / 2) * (ch + 0.15),
+                        cw, ch);
             }
         } else {
             // ── 无图片：题干+选项紧凑排列 ──
@@ -296,12 +313,11 @@ document.getElementById('exportBtn').onclick = () => {
             x: 0.3, y: 7.15, w: 0.6, h: 0.25,
             fontSize: 10, color: '9aabbf'
         });
-    });
+    }
 
     const fileName = `PPT导出_${new Date().getTime()}.pptx`;
-    pptx.writeFile({ fileName }).then(() => {
-        document.getElementById('status').innerText = "🎉 文件下载已启动！";
-    });
+    await pptx.writeFile({ fileName });
+    document.getElementById('status').innerText = "🎉 文件下载已启动！";
 };
 </script>
 </body>
