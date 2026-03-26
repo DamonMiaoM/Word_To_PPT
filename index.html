@@ -133,43 +133,67 @@ document.getElementById('fileInput').onchange = (e) => {
 document.getElementById('exportBtn').onclick = () => {
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE';
-    
+
     finalSlides.forEach((s, idx) => {
         const slide = pptx.addSlide();
         const hasImg = s.images && s.images.length > 0;
-        
-        // 视觉装饰：顶部色条
-        slide.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.35, fill:{color:'2b579a'} });
+        const contentW = hasImg ? 7.8 : 12.5;
 
-        // 动态字号：标题超过30字时缩小字体
-        const titleLen = s.title.length;
-        const titleFontSize = titleLen > 40 ? 16 : titleLen > 25 ? 18 : 20;
-        const contentW = hasImg ? 7.5 : 12.8;
-
-        // 题目区：高度增大，启用自适应缩放
-        slide.addText(s.title, {
-            x: 0.4, y: 0.45, w: contentW, h: 3.2,
-            fontSize: titleFontSize, color: '1a1a1a', bold: true,
-            valign: 'top', autoFit: true, lineSpacing: 28
+        // ── 顶部浅蓝色标题栏 ──
+        slide.addShape(pptx.ShapeType.rect, {
+            x: 0, y: 0, w: 13.33, h: 0.62,
+            fill: { color: 'd6e8f7' }, line: { color: 'd6e8f7' }
         });
 
-        // 选项内容区：紧跟题目区下方
+        // 提取题号（支持 1. / 1、/ 一、等格式）
+        const numMatch = s.title.match(/^(\d+)|^([一二三四五六七八九十百]+)/);
+        const qNum = numMatch ? (numMatch[1] || numMatch[2]) : String(idx + 1);
+
+        // "第 X 题" 标题
+        slide.addText(`第 ${qNum} 题`, {
+            x: 0.3, y: 0.07, w: 4, h: 0.48,
+            fontSize: 20, color: '1a4a8a', bold: true, valign: 'middle'
+        });
+
+        // 右上角"选择题"标签
+        slide.addText('— 选择题', {
+            x: 10.8, y: 0.07, w: 2.2, h: 0.48,
+            fontSize: 11, color: '7a9bbf', align: 'right', valign: 'middle'
+        });
+
+        // ── 题目正文 ──
+        const titleLen = s.title.length;
+        const titleFontSize = titleLen > 55 ? 13 : titleLen > 35 ? 14 : 15;
+
+        slide.addText(s.title, {
+            x: 0.35, y: 0.75, w: contentW, h: 3.5,
+            fontSize: titleFontSize, color: '1a1a1a',
+            valign: 'top', autoFit: true, lineSpacing: 22
+        });
+
+        // ── 选项区 ──
         if (s.body.length > 0) {
             slide.addText(s.body.join('\n'), {
-                x: 0.4, y: 3.75, w: contentW, h: 3.4,
-                fontSize: 16, color: '333333', lineSpacing: 26,
+                x: 0.35, y: 4.35, w: contentW, h: 2.8,
+                fontSize: 13, color: '333333', lineSpacing: 20,
                 valign: 'top', autoFit: true
             });
         }
 
-        // 图片处理：右侧全高显示
+        // ── 图片（右侧） ──
         if (hasImg) {
             slide.addImage({
                 data: s.images[0],
-                x: 8.1, y: 0.45, w: 4.8, h: 6.7,
-                sizing: { type: 'contain', w: 4.8, h: 6.7 }
+                x: 8.25, y: 0.72, w: 4.7, h: 6.45,
+                sizing: { type: 'contain', w: 4.7, h: 6.45 }
             });
         }
+
+        // ── 底部页码 ──
+        slide.addText(String(idx + 1), {
+            x: 0.3, y: 7.15, w: 0.6, h: 0.25,
+            fontSize: 10, color: '9aabbf'
+        });
     });
 
     const fileName = `PPT导出_${new Date().getTime()}.pptx`;
