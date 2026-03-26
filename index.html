@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 题目转换 B-v1.2.1 (纯净导出版)</title>
+    <script src="jszip.min.js"></script>
+    <script src="pptxgen.bundle.js"></script>
+    <style>
+        :root { --primary: #2b579a; --bg: #f3f4f6; }
+        body { font-family: "Microsoft YaHei", sans-serif; background: var(--bg); height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0; }
+        .main-card { background: white; width: 500px; padding: 40px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center; }
+        .upload-zone { border: 2px dashed #cbd5e1; background: #f8fafc; padding: 50px 20px; border-radius: 12px; cursor: pointer; transition: 0.3s; margin-bottom: 20px; }
+        .upload-zone:hover { border-color: var(--primary); background: #f0f7ff; }
+        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.2s; }
+        button:disabled { background: #cbd5e1; cursor: not-allowed; }
+        #status { margin-top: 15px; font-size: 14px; color: #64748b; min-height: 1.5em; }
+    </style>
+</head>
+<body>
+
+<div class="main-card">
+    <h2 style="color: var(--primary); margin-top: 0;">AI 题目转换器</h2>
+    <p style="color: #666; font-size: 14px; margin-bottom: 30px;">视觉布局 B 方案 · 2026 高速版</p>
+    
+    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+        <div style="font-size: 40px; margin-bottom: 10px;">📄</div>
+        <b id="fileDesc">点击或拖拽上传 Word 文档</b>
+        <input type="file" id="fileInput" accept=".docx" hidden>
+    </div>
+    
+    <button id="exportBtn" disabled>生成并导出 PPTX</button>
+    <div id="status">等待上传文件...</div>
+</div>
+
+<script>
+let finalSlides = [];
+
+document.getElementById('fileInput').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    document.getElementById('fileDesc').innerText = file.name;
+    const status = document.getElementById('status');
+    status.innerHTML = "⏳ 正在解析文档内容与媒体资源...";
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const zip = await JSZip.loadAsync(event.target.result);
+            
+            // 1. 提取图片资源映射
+            const mediaMap = {};
+            const mediaFiles = zip.filter(path => path.startsWith("word/media/"));
+            for (let f of mediaFiles) {
+                const b64 = await f.async("base64");
+                const ext = f.name.split('.').pop().toLowerCase();
+                const fileName = f.name.split('/').pop();
+                mediaMap[fileName] = `data:image/${ext === 'jpg' ? 'jpeg' : 'png'};base64,${b64}`;
+            }
+
+            // 2. 解析图片关系 ID
+            const ridMap = {};
+            const relsFile = await zip.file("word/_rels/document.xml.rels").async("string");
+            const relsXml = new DOMParser().parseFromString(relsFile, "text/xml");
+            Array.from(relsXml.getElementsByTagName("Relationship")).forEach(rel => {
+                ridMap[rel.getAttribute("Id")] = rel.getAttribute("Target").split('/').pop();
+            });
+
+            // 3. 解析主文档 XML
+            const docXmlStr = await zip.file("word/document.xml").async("string");
+            const docXml = new DOMParser().parseFromString(docXmlStr, "text/xml");
+            const paragraphs = Array.from(docXml.getElementsByTagName("w:p"));
+
+            finalSlides = [];
+            let currentSlide = null;
+            // 匹配题号开头 (如: 1. 一、 1、)
+            const questionRegex = /^([一二三四五六七八九十]+[、\s]|\d+[\.、\s\)\．])/;
+
+            paragraphs.forEach(p => {
+                const text = Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join("").trim();
+                
+                // 提取段落中的图片
+                const imgRids = Array.from(p.getElementsByTagName("v:imagedata")).map(i => i.getAttribute("r:id"))
+                                .concat(Array.from(p.getElementsByTagName("a:blip")).map(i => i.getAttribute("r:embed")));
+                const segmentImages = imgRids.map(rid => mediaMap[ridMap[rid]]).filter(src => src);
+
+                if (questionRegex.test(text)) {
+                    if (currentSlide) finalSlides.push(currentSlide);
+                    currentSlide = { title: text, body: [], images: segmentImages };
+                } else if (currentSlide) {
+                    if (text) {
+                        // 自动识别 A. B. C. D. 并在其前强制换行排版
+                        const formattedText = text.replace(/([A-D][\.、\s\)\．])/g, '\n$1').trim();
+                        currentSlide.body.push(formattedText);
+                    }
+                    if (segmentImages.length > 0) currentSlide.images.push(...segmentImages);
+                }
+            });
+            if (currentSlide) finalSlides.push(currentSlide);
+
+            status.innerHTML = `✅ 解析完成：共识别到 ${finalSlides.length} 道题目`;
+            document.getElementById('exportBtn').disabled = false;
+        } catch (err) {
+            status.innerHTML = `<span style="color:red">❌ 解析故障: ${err.message}</span>`;
+        }
+    };
+    reader.readAsArrayBuffer(file);
+};
+
+document.getElementById('exportBtn').onclick = () => {
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE';
+    
+    finalSlides.forEach((s, idx) => {
+        const slide = pptx.addSlide();
+        const hasImg = s.images && s.images.length > 0;
+        
+        // 视觉装饰：顶部色条
+        slide.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.35, fill:{color:'2b579a'} });
+
+        // 题目区 (自适应宽度)
+        slide.addText(s.title, { 
+            x: 0.5, y: 0.6, w: hasImg ? 7.5 : 12, h: 1.2,
+            fontSize: 28, color: '1a1a1a', bold: true, valign: 'top'
+        });
+
+        // 选项内容区
+        if (s.body.length > 0) {
+            slide.addText(s.body.join('\n'), { 
+                x: 0.8, y: 2.1, w: hasImg ? 7.2 : 11.5, h: 4.8,
+                fontSize: 20, color: '333333', lineSpacing: 32, valign: 'top' 
+            });
+        }
+
+        // 图片处理 (右侧悬浮模式)
+        if (hasImg) {
+            // 仅取第一张图片作为该页主图以保持视觉整洁
+            slide.addImage({ 
+                data: s.images[0], 
+                x: 8.2, y: 1.0, w: 4.6, h: 5.2,
+                sizing: { type: 'contain', w: 4.6, h: 5.2 }
+            });
+        }
+    });
+
+    const fileName = `PPT导出_${new Date().getTime()}.pptx`;
+    pptx.writeFile({ fileName }).then(() => {
+        document.getElementById('status').innerText = "🎉 文件下载已启动！";
+    });
+};
+</script>
+</body>
+</html>
