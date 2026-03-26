@@ -141,27 +141,33 @@ document.getElementById('exportBtn').onclick = () => {
         // 视觉装饰：顶部色条
         slide.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.33, h:0.35, fill:{color:'2b579a'} });
 
-        // 题目区 (自适应宽度)
-        slide.addText(s.title, { 
-            x: 0.5, y: 0.6, w: hasImg ? 7.5 : 12, h: 1.2,
-            fontSize: 28, color: '1a1a1a', bold: true, valign: 'top'
+        // 动态字号：标题超过30字时缩小字体
+        const titleLen = s.title.length;
+        const titleFontSize = titleLen > 40 ? 16 : titleLen > 25 ? 18 : 20;
+        const contentW = hasImg ? 7.5 : 12.8;
+
+        // 题目区：高度增大，启用自适应缩放
+        slide.addText(s.title, {
+            x: 0.4, y: 0.45, w: contentW, h: 3.2,
+            fontSize: titleFontSize, color: '1a1a1a', bold: true,
+            valign: 'top', autoFit: true, lineSpacing: 28
         });
 
-        // 选项内容区
+        // 选项内容区：紧跟题目区下方
         if (s.body.length > 0) {
-            slide.addText(s.body.join('\n'), { 
-                x: 0.8, y: 2.1, w: hasImg ? 7.2 : 11.5, h: 4.8,
-                fontSize: 20, color: '333333', lineSpacing: 32, valign: 'top' 
+            slide.addText(s.body.join('\n'), {
+                x: 0.4, y: 3.75, w: contentW, h: 3.4,
+                fontSize: 16, color: '333333', lineSpacing: 26,
+                valign: 'top', autoFit: true
             });
         }
 
-        // 图片处理 (右侧悬浮模式)
+        // 图片处理：右侧全高显示
         if (hasImg) {
-            // 仅取第一张图片作为该页主图以保持视觉整洁
-            slide.addImage({ 
-                data: s.images[0], 
-                x: 8.2, y: 1.0, w: 4.6, h: 5.2,
-                sizing: { type: 'contain', w: 4.6, h: 5.2 }
+            slide.addImage({
+                data: s.images[0],
+                x: 8.1, y: 0.45, w: 4.8, h: 6.7,
+                sizing: { type: 'contain', w: 4.8, h: 6.7 }
             });
         }
     });
