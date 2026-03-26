@@ -22,7 +22,7 @@
     <h2 style="color: var(--primary); margin-top: 0;">AI 题目转换器</h2>
     <p style="color: #666; font-size: 14px; margin-bottom: 30px;">视觉布局 B 方案 · 2026 高速版</p>
     
-    <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
         <div style="font-size: 40px; margin-bottom: 10px;">📄</div>
         <b id="fileDesc">点击或拖拽上传 Word 文档</b>
         <input type="file" id="fileInput" accept=".docx" hidden>
@@ -35,10 +35,29 @@
 <script>
 let finalSlides = [];
 
-document.getElementById('fileInput').onchange = async (e) => {
-    const file = e.target.files[0];
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    uploadZone.style.borderColor = 'var(--primary)';
+    uploadZone.style.background = '#f0f7ff';
+});
+uploadZone.addEventListener('dragleave', () => {
+    uploadZone.style.borderColor = '';
+    uploadZone.style.background = '';
+});
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    uploadZone.style.borderColor = '';
+    uploadZone.style.background = '';
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+});
+
+async function handleFile(file) {
     if (!file) return;
-    
+
     document.getElementById('fileDesc').innerText = file.name;
     const status = document.getElementById('status');
     status.innerHTML = "⏳ 正在解析文档内容与媒体资源...";
@@ -105,6 +124,10 @@ document.getElementById('fileInput').onchange = async (e) => {
         }
     };
     reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('fileInput').onchange = (e) => {
+    handleFile(e.target.files[0]);
 };
 
 document.getElementById('exportBtn').onclick = () => {
