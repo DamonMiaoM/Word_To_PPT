@@ -107,11 +107,10 @@ async function handleFile(file) {
                 const isImageOnly  = text === '' && segmentImages.length > 0;
                 const isSubstantial = text.length > 5 && !isOptionLine;
 
-                // 判断当前 slide 是否已有完整 ABCD 选项
+                // 判断当前 slide 是否已有完整选项
+                // 选项可能在同一行（A.xx B.xx C.xx D.xx），只需检测 D. 出现即视为选项已齐全
                 const bodyStr = currentSlide ? currentSlide.body.join('\n') : '';
-                const seenAllOpts = currentSlide &&
-                    /(^|\n)A[\.、\s\)\.]/.test('\n' + bodyStr) &&
-                    /(^|\n)D[\.、\s\)\.]/.test('\n' + bodyStr);
+                const seenAllOpts = currentSlide && /D[\.、]/.test(bodyStr);
 
                 if (questionRegex.test(text)) {
                     // 明确题号 → 新 slide
