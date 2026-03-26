@@ -97,22 +97,46 @@ async function handleFile(file) {
 
             paragraphs.forEach(p => {
                 const text = Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join("").trim();
-                
+
                 // 提取段落中的图片
                 const imgRids = Array.from(p.getElementsByTagName("v:imagedata")).map(i => i.getAttribute("r:id"))
                                 .concat(Array.from(p.getElementsByTagName("a:blip")).map(i => i.getAttribute("r:embed")));
                 const segmentImages = imgRids.map(rid => mediaMap[ridMap[rid]]).filter(src => src);
 
+                const isOptionLine = /^[A-D][\.、\s\)\.]/.test(text);
+                const isImageOnly  = text === '' && segmentImages.length > 0;
+                const isSubstantial = text.length > 5 && !isOptionLine;
+
+                // 判断当前 slide 是否已有完整 ABCD 选项
+                const bodyStr = currentSlide ? currentSlide.body.join('\n') : '';
+                const seenAllOpts = currentSlide &&
+                    /(^|\n)A[\.、\s\)\.]/.test('\n' + bodyStr) &&
+                    /(^|\n)D[\.、\s\)\.]/.test('\n' + bodyStr);
+
                 if (questionRegex.test(text)) {
+                    // 明确题号 → 新 slide
                     if (currentSlide) finalSlides.push(currentSlide);
-                    currentSlide = { title: text, body: [], images: segmentImages };
+                    currentSlide = { title: text, body: [], images: [...segmentImages] };
+                } else if (currentSlide && seenAllOpts && (isSubstantial || isImageOnly)) {
+                    // ABCD 已齐，遇到新内容（图片段或正文）→ 自动切换新 slide
+                    finalSlides.push(currentSlide);
+                    currentSlide = {
+                        title: isSubstantial ? text : '',
+                        body: [],
+                        images: [...segmentImages]
+                    };
                 } else if (currentSlide) {
-                    if (text) {
-                        // 自动识别 A. B. C. D. 并在其前强制换行排版
-                        const formattedText = text.replace(/([A-D][\.、\s\)\．])/g, '\n$1').trim();
-                        currentSlide.body.push(formattedText);
+                    // 当前 slide 无题目文字时，将首段正文提升为题目
+                    if (!currentSlide.title && isSubstantial) {
+                        currentSlide.title = text;
+                        if (segmentImages.length > 0) currentSlide.images.push(...segmentImages);
+                    } else {
+                        if (text) {
+                            const fmt = text.replace(/([A-D][\.、\s\)\．])/g, '\n$1').trim();
+                            currentSlide.body.push(fmt);
+                        }
+                        if (segmentImages.length > 0) currentSlide.images.push(...segmentImages);
                     }
-                    if (segmentImages.length > 0) currentSlide.images.push(...segmentImages);
                 }
             });
             if (currentSlide) finalSlides.push(currentSlide);
@@ -161,40 +185,58 @@ document.getElementById('exportBtn').onclick = () => {
             fontSize: 11, color: '7a9bbf', align: 'right', valign: 'middle'
         });
 
-        const FONT = '微软雅黑';
+        // 分割选项与非选项内容，选项短时水平排列
+        function buildBodyText(body) {
+            const lines = body.join('\n').split('\n').map(l => l.trim()).filter(Boolean);
+            const optLines    = lines.filter(l =>  /^[A-D][\.、\s\)\.]/.test(l));
+            const nonOptLines = lines.filter(l => !/^[A-D][\.、\s\)\.]/.test(l));
+            if (optLines.length === 0) return lines.join('\n');
+            const optStr = optLines.map(l => l.replace(/\s+/g, '')).join('').length < 52
+                ? optLines.join('    ')   // 水平排列
+                : optLines.join('\n');    // 垂直排列
+            return [...nonOptLines, optStr].filter(Boolean).join('\n');
+        }
+
+        // 标题栏下分隔线
+        slide.addShape(pptx.ShapeType.line, {
+            x: 0, y: 0.62, w: 13.33, h: 0,
+            line: { color: 'b8d4ee', width: 0.5 }
+        });
+
+        const FONT     = '微软雅黑';
         const FONT_SIZE = 28;
-        const LINE_SP = 38;
+        const LINE_SP   = 40;
 
         if (hasImg) {
-            // ── 有图片：题干左侧上方，选项左侧下方，图片右侧 ──
-            slide.addText(s.title, {
-                x: 0.35, y: 0.72, w: 7.8, h: 3.3,
-                fontFace: FONT, fontSize: FONT_SIZE, bold: true, color: '1a1a1a',
-                valign: 'top', autoFit: true, lineSpacing: LINE_SP
-            });
-            if (s.body.length > 0) {
-                slide.addText(s.body.join('\n'), {
-                    x: 0.35, y: 4.15, w: 7.8, h: 3.1,
-                    fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222',
-                    valign: 'top', autoFit: true, lineSpacing: LINE_SP
-                });
-            }
-            // 图片：等比例 contain，缩小容器避免拉伸
-            slide.addImage({
-                data: s.images[0],
-                x: 8.35, y: 0.75, w: 4.55, h: 6.4,
-                sizing: { type: 'contain', w: 4.55, h: 6.4 }
-            });
-        } else {
-            // ── 无图片：题干+选项合为一个文字块，紧凑排列 ──
+            // ── 有图片：左侧题干+选项，右侧图片居中 ──
+            const bodyText = buildBodyText(s.body);
             const parts = [
-                { text: s.title, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: true, color: '1a1a1a', breakLine: s.body.length > 0 } }
+                { text: s.title, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: true,  color: '1a1a1a', breakLine: !!bodyText } }
             ];
-            if (s.body.length > 0) {
-                parts.push({ text: s.body.join('\n'), options: { fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222' } });
+            if (bodyText) {
+                parts.push({ text: bodyText, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222' } });
             }
             slide.addText(parts, {
-                x: 0.35, y: 0.80, w: 12.6, h: 6.4,
+                x: 0.4, y: 0.80, w: 7.0, h: 6.45,
+                valign: 'top', autoFit: true, lineSpacing: LINE_SP
+            });
+            // 图片：右侧，等比例 contain，容器适中避免过度放大
+            slide.addImage({
+                data: s.images[0],
+                x: 7.7, y: 1.2, w: 5.2, h: 4.2,
+                sizing: { type: 'contain', w: 5.2, h: 4.2 }
+            });
+        } else {
+            // ── 无图片：题干+选项紧凑排列 ──
+            const bodyText = buildBodyText(s.body);
+            const parts = [
+                { text: s.title, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: true,  color: '1a1a1a', breakLine: !!bodyText } }
+            ];
+            if (bodyText) {
+                parts.push({ text: bodyText, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222' } });
+            }
+            slide.addText(parts, {
+                x: 0.4, y: 0.80, w: 12.6, h: 6.45,
                 valign: 'top', autoFit: true, lineSpacing: LINE_SP
             });
         }
