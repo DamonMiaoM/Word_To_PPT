@@ -92,8 +92,12 @@ async function handleFile(file) {
 
             finalSlides = [];
             let currentSlide = null;
-            // 匹配题号开头 (如: 1. 一、 1、)
-            const questionRegex = /^([一二三四五六七八九十]+[、\s]|\d+[\.、\s\)\．])/;
+            let currentSectionLabel = '选择题'; // 当前大题类型标签
+
+            // 大题标题：汉字序号（一、二、三…），只更新标签、不生成 slide
+            const sectionRegex = /^[一二三四五六七八九十]+[、，\s]/;
+            // 小题题号：阿拉伯数字（1、1. 1) 等），生成 slide
+            const questionRegex = /^\d+[\.、\s\)\．]/;
 
             paragraphs.forEach(p => {
                 const text = Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join("").trim();
@@ -103,29 +107,39 @@ async function handleFile(file) {
                                 .concat(Array.from(p.getElementsByTagName("a:blip")).map(i => i.getAttribute("r:embed")));
                 const segmentImages = imgRids.map(rid => mediaMap[ridMap[rid]]).filter(src => src);
 
-                const isOptionLine = /^[A-D][\.、\s\)\.]/.test(text);
-                const isImageOnly  = text === '' && segmentImages.length > 0;
+                const isOptionLine  = /^[A-D][\.、\s\)\.]/.test(text);
+                const isImageOnly   = text === '' && segmentImages.length > 0;
                 const isSubstantial = text.length > 5 && !isOptionLine;
+                const bodyStr       = currentSlide ? currentSlide.body.join('\n') : '';
+                const seenAllOpts   = currentSlide && /D[\.、]/.test(bodyStr);
 
-                // 判断当前 slide 是否已有完整选项
-                // 选项可能在同一行（A.xx B.xx C.xx D.xx），只需检测 D. 出现即视为选项已齐全
-                const bodyStr = currentSlide ? currentSlide.body.join('\n') : '';
-                const seenAllOpts = currentSlide && /D[\.、]/.test(bodyStr);
-
-                if (questionRegex.test(text)) {
-                    // 明确题号 → 新 slide
+                if (sectionRegex.test(text)) {
+                    // 大题标题：解析题型名称，更新标签，不创建 slide
+                    const m = text.match(/^[一二三四五六七八九十]+[、，\s]*(.+?)$/);
+                    if (m) {
+                        const raw = m[1].replace(/[。、，\s]/g, '');
+                        if      (raw.includes('选择')) currentSectionLabel = '选择题';
+                        else if (raw.includes('计算')) currentSectionLabel = '计算题';
+                        else if (raw.includes('填空')) currentSectionLabel = '填空题';
+                        else if (raw.includes('判断')) currentSectionLabel = '判断题';
+                        else if (raw.includes('解答') || raw.includes('应用')) currentSectionLabel = '解答题';
+                        else currentSectionLabel = raw || '解答题';
+                    }
+                    if (currentSlide) { finalSlides.push(currentSlide); currentSlide = null; }
+                } else if (questionRegex.test(text)) {
+                    // 小题题号 → 新 slide
                     if (currentSlide) finalSlides.push(currentSlide);
-                    currentSlide = { title: text, body: [], images: [...segmentImages] };
+                    currentSlide = { title: text, body: [], images: [...segmentImages], section: currentSectionLabel };
                 } else if (currentSlide && seenAllOpts && (isSubstantial || isImageOnly)) {
-                    // ABCD 已齐，遇到新内容（图片段或正文）→ 自动切换新 slide
+                    // ABCD 已齐，遇到新内容 → 自动切换新 slide
                     finalSlides.push(currentSlide);
                     currentSlide = {
                         title: isSubstantial ? text : '',
                         body: [],
-                        images: [...segmentImages]
+                        images: [...segmentImages],
+                        section: currentSectionLabel
                     };
                 } else if (currentSlide) {
-                    // 当前 slide 无题目文字时，将首段正文提升为题目
                     if (!currentSlide.title && isSubstantial) {
                         currentSlide.title = text;
                         if (segmentImages.length > 0) currentSlide.images.push(...segmentImages);
@@ -178,8 +192,8 @@ document.getElementById('exportBtn').onclick = () => {
             fontSize: 20, color: '1a4a8a', bold: true, valign: 'middle'
         });
 
-        // 右上角"选择题"标签
-        slide.addText('— 选择题', {
+        // 右上角题型标签（动态）
+        slide.addText(`— ${s.section || '解答题'}`, {
             x: 10.8, y: 0.07, w: 2.2, h: 0.48,
             fontSize: 11, color: '7a9bbf', align: 'right', valign: 'middle'
         });
