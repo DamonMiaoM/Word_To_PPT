@@ -161,31 +161,41 @@ document.getElementById('exportBtn').onclick = () => {
             fontSize: 11, color: '7a9bbf', align: 'right', valign: 'middle'
         });
 
-        // ── 题目正文 ──
-        const titleLen = s.title.length;
-        const titleFontSize = titleLen > 55 ? 13 : titleLen > 35 ? 14 : 15;
+        const FONT = '微软雅黑';
+        const FONT_SIZE = 28;
+        const LINE_SP = 38;
 
-        slide.addText(s.title, {
-            x: 0.35, y: 0.75, w: contentW, h: 3.5,
-            fontSize: titleFontSize, color: '1a1a1a',
-            valign: 'top', autoFit: true, lineSpacing: 22
-        });
-
-        // ── 选项区 ──
-        if (s.body.length > 0) {
-            slide.addText(s.body.join('\n'), {
-                x: 0.35, y: 4.35, w: contentW, h: 2.8,
-                fontSize: 13, color: '333333', lineSpacing: 20,
-                valign: 'top', autoFit: true
-            });
-        }
-
-        // ── 图片（右侧） ──
         if (hasImg) {
+            // ── 有图片：题干左侧上方，选项左侧下方，图片右侧 ──
+            slide.addText(s.title, {
+                x: 0.35, y: 0.72, w: 7.8, h: 3.3,
+                fontFace: FONT, fontSize: FONT_SIZE, bold: true, color: '1a1a1a',
+                valign: 'top', autoFit: true, lineSpacing: LINE_SP
+            });
+            if (s.body.length > 0) {
+                slide.addText(s.body.join('\n'), {
+                    x: 0.35, y: 4.15, w: 7.8, h: 3.1,
+                    fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222',
+                    valign: 'top', autoFit: true, lineSpacing: LINE_SP
+                });
+            }
+            // 图片：等比例 contain，缩小容器避免拉伸
             slide.addImage({
                 data: s.images[0],
-                x: 8.25, y: 0.72, w: 4.7, h: 6.45,
-                sizing: { type: 'contain', w: 4.7, h: 6.45 }
+                x: 8.35, y: 0.75, w: 4.55, h: 6.4,
+                sizing: { type: 'contain', w: 4.55, h: 6.4 }
+            });
+        } else {
+            // ── 无图片：题干+选项合为一个文字块，紧凑排列 ──
+            const parts = [
+                { text: s.title, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: true, color: '1a1a1a', breakLine: s.body.length > 0 } }
+            ];
+            if (s.body.length > 0) {
+                parts.push({ text: s.body.join('\n'), options: { fontFace: FONT, fontSize: FONT_SIZE, bold: false, color: '222222' } });
+            }
+            slide.addText(parts, {
+                x: 0.35, y: 0.80, w: 12.6, h: 6.4,
+                valign: 'top', autoFit: true, lineSpacing: LINE_SP
             });
         }
 
