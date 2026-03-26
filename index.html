@@ -154,6 +154,30 @@ async function handleFile(file) {
             });
             if (currentSlide) finalSlides.push(currentSlide);
 
+            // ── 后处理：复杂多图题拆分为主题干 + 各小题 ──
+            // 检测含 (1)(2) 小题标记且图片 ≥ 2 的题目，拆成独立 slide
+            const subQReg = /^[\(（][1-9][\)）]/;
+            finalSlides = finalSlides.flatMap(s => {
+                if (s.images.length < 2) return [s];
+                const subStarts = s.body.reduce((acc, item, i) => {
+                    if (subQReg.test(item.trim())) acc.push(i);
+                    return acc;
+                }, []);
+                if (subStarts.length < 2) return [s]; // 小题不足2道，不拆
+                // 主题干 slide（含全部图片）
+                const result = [{ ...s, body: s.body.slice(0, subStarts[0]) }];
+                // 各小题 slide（无图，全宽文字）
+                for (let i = 0; i < subStarts.length; i++) {
+                    const end = subStarts[i + 1] || s.body.length;
+                    result.push({
+                        title: s.title, section: s.section,
+                        body: s.body.slice(subStarts[i], end),
+                        images: [], isSub: true
+                    });
+                }
+                return result;
+            });
+
             status.innerHTML = `✅ 解析完成：共识别到 ${finalSlides.length} 道题目`;
             document.getElementById('exportBtn').disabled = false;
         } catch (err) {
@@ -186,8 +210,8 @@ document.getElementById('exportBtn').onclick = () => {
         const numMatch = s.title.match(/^(\d+)|^([一二三四五六七八九十百]+)/);
         const qNum = numMatch ? (numMatch[1] || numMatch[2]) : String(idx + 1);
 
-        // "第 X 题" 标题
-        slide.addText(`第 ${qNum} 题`, {
+        // "第 X 题" 标题（小题时加「续」标记）
+        slide.addText(`第 ${qNum} 题${s.isSub ? ' · 续' : ''}`, {
             x: 0.3, y: 0.07, w: 4, h: 0.48,
             fontSize: 20, color: '1a4a8a', bold: true, valign: 'middle'
         });
@@ -221,7 +245,7 @@ document.getElementById('exportBtn').onclick = () => {
         const LINE_SP   = 40;
 
         if (hasImg) {
-            // ── 有图片：左侧题干+选项，右侧图片居中 ──
+            // ── 有图片：左侧题干+选项，右侧图片网格 ──
             const bodyText = buildBodyText(s.body);
             const parts = [
                 { text: s.title, options: { fontFace: FONT, fontSize: FONT_SIZE, bold: true,  color: '1a1a1a', breakLine: !!bodyText } }
@@ -233,12 +257,25 @@ document.getElementById('exportBtn').onclick = () => {
                 x: 0.4, y: 0.80, w: 7.0, h: 6.45,
                 valign: 'top', autoFit: true, lineSpacing: LINE_SP
             });
-            // 图片：右侧，等比例 contain，容器适中避免过度放大
-            slide.addImage({
-                data: s.images[0],
-                x: 7.7, y: 1.2, w: 5.2, h: 4.2,
-                sizing: { type: 'contain', w: 5.2, h: 4.2 }
-            });
+            // 多图网格：1图→居中，2图→竖排，3-4图→2×2
+            const imgs = s.images.slice(0, 4);
+            const gx = 7.7, gy = 1.0, gw = 5.3, gh = 5.8;
+            if (imgs.length === 1) {
+                slide.addImage({ data: imgs[0], x: gx, y: gy, w: gw, h: gh,
+                    sizing: { type: 'contain', w: gw, h: gh } });
+            } else if (imgs.length === 2) {
+                const rh = (gh - 0.15) / 2;
+                imgs.forEach((img, i) => slide.addImage({ data: img,
+                    x: gx, y: gy + i * (rh + 0.15), w: gw, h: rh,
+                    sizing: { type: 'contain', w: gw, h: rh } }));
+            } else {
+                const cw = (gw - 0.15) / 2, ch = (gh - 0.15) / 2;
+                imgs.forEach((img, i) => slide.addImage({ data: img,
+                    x: gx + (i % 2) * (cw + 0.15),
+                    y: gy + Math.floor(i / 2) * (ch + 0.15),
+                    w: cw, h: ch,
+                    sizing: { type: 'contain', w: cw, h: ch } }));
+            }
         } else {
             // ── 无图片：题干+选项紧凑排列 ──
             const bodyText = buildBodyText(s.body);
