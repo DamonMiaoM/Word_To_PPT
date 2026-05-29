@@ -105,14 +105,12 @@ async function handleFile(file) {
                 const text = Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join("").trim();
 
                 // 检测 Word 自动编号列表段落（题号在 <w:numPr> 里，不在文字里）
-                const pPr = p.getElementsByTagName("w:pPr")[0];
-                const numPrEl = pPr ? pPr.getElementsByTagName("w:numPr")[0] : null;
-                const numIdEl = numPrEl ? numPrEl.getElementsByTagName("w:numId")[0] : null;
-                const ilvlEl  = numPrEl ? numPrEl.getElementsByTagName("w:ilvl")[0] : null;
-                const numIdVal = numIdEl ? parseInt(numIdEl.getAttribute("w:val") || "0") : 0;
-                const ilvlVal  = ilvlEl  ? parseInt(ilvlEl.getAttribute("w:val")  || "0") : 0;
+                // 用 XMLSerializer 序列化后 regex 匹配，绕过浏览器命名空间 getAttribute 兼容问题
+                const pXml = new XMLSerializer().serializeToString(p);
+                const hasListNum = /w:numId[^>]*w:val="([1-9]\d*)"/.test(pXml) || /w:numId[^/]*val="([1-9]\d*)"/.test(pXml);
+                const isLvl0    = /w:ilvl[^>]*w:val="0"/.test(pXml) || /w:ilvl[^/]*val="0"/.test(pXml);
                 // numId>0 且 ilvl=0 且文字足够长 → 视为独立题目段落
-                const isListQuestion = numIdVal > 0 && ilvlVal === 0 && text.length > 30 && !questionRegex.test(text);
+                const isListQuestion = hasListNum && isLvl0 && text.length > 30 && !questionRegex.test(text);
 
                 // 提取段落中的图片
                 const imgRids = Array.from(p.getElementsByTagName("v:imagedata")).map(i => i.getAttribute("r:id"))
