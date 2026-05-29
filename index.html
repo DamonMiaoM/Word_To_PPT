@@ -99,8 +99,20 @@ async function handleFile(file) {
             // 小题题号：阿拉伯数字（1、1. 1) 等），生成 slide
             const questionRegex = /^\d+[\.、\s\)\．]/;
 
+            let listQuestionCounter = 0; // 用于 Word 自动编号列表的题号计数
+
             paragraphs.forEach(p => {
                 const text = Array.from(p.getElementsByTagName("w:t")).map(t => t.textContent).join("").trim();
+
+                // 检测 Word 自动编号列表段落（题号在 <w:numPr> 里，不在文字里）
+                const pPr = p.getElementsByTagName("w:pPr")[0];
+                const numPrEl = pPr ? pPr.getElementsByTagName("w:numPr")[0] : null;
+                const numIdEl = numPrEl ? numPrEl.getElementsByTagName("w:numId")[0] : null;
+                const ilvlEl  = numPrEl ? numPrEl.getElementsByTagName("w:ilvl")[0] : null;
+                const numIdVal = numIdEl ? parseInt(numIdEl.getAttribute("w:val") || "0") : 0;
+                const ilvlVal  = ilvlEl  ? parseInt(ilvlEl.getAttribute("w:val")  || "0") : 0;
+                // numId>0 且 ilvl=0 且文字足够长 → 视为独立题目段落
+                const isListQuestion = numIdVal > 0 && ilvlVal === 0 && text.length > 30 && !questionRegex.test(text);
 
                 // 提取段落中的图片
                 const imgRids = Array.from(p.getElementsByTagName("v:imagedata")).map(i => i.getAttribute("r:id"))
@@ -126,10 +138,11 @@ async function handleFile(file) {
                         else currentSectionLabel = raw || '解答题';
                     }
                     if (currentSlide) { finalSlides.push(currentSlide); currentSlide = null; }
-                } else if (questionRegex.test(text)) {
-                    // 小题题号 → 新 slide
+                } else if (questionRegex.test(text) || isListQuestion) {
+                    // 小题题号 → 新 slide（支持手动编号和 Word 自动列表编号两种格式）
                     if (currentSlide) finalSlides.push(currentSlide);
-                    currentSlide = { title: text, body: [], images: [...segmentImages], section: currentSectionLabel };
+                    const slideTitle = isListQuestion ? `${++listQuestionCounter}、${text}` : text;
+                    currentSlide = { title: slideTitle, body: [], images: [...segmentImages], section: currentSectionLabel };
                 } else if (currentSlide && seenAllOpts && (isSubstantial || isImageOnly)) {
                     // ABCD 已齐，遇到新内容 → 自动切换新 slide
                     finalSlides.push(currentSlide);
